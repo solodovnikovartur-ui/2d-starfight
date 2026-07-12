@@ -1,0 +1,81 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0f0f14;
+  color: #e8e8ef;
+  font-family: system-ui, sans-serif;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+.game-shell,
+.game-world {
+  width: 100%;
+  height: 100%;
+}
+
+.game-world {
+  position: relative;
+  overflow: hidden;
+  background: #12121a;
+}
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px;
+  z-index: 1;
+}
+
+.hud__top {
+  display: flex;
+  gap: 8px;
+}
+
+.hud__panel {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: rgb(15 15 20 / 75%);
+  border: 1px solid #2e2e3e;
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+}
+
+.hud__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8888a0;
+}
+
+.hud__value {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: #6ee7b7;
+}
+
+.hud__hint {
+  align-self: center;
+  font-size: 13px;
+  color: #8888a0;
+}

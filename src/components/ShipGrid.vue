@@ -21,11 +21,25 @@ const cells = computed(() => {
   const list: { x: number; y: number; cell: GridCell }[] = [];
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      list.push({ x, y, cell: props.state.grid[y][x] });
+      const cell = props.state.grid[y][x];
+      if (!isBuildMode.value && cell === null) {
+        continue;
+      }
+      list.push({ x, y, cell });
     }
   }
   return list;
 });
+
+function cellGridStyle(x: number, y: number): Record<string, string> {
+  if (isBuildMode.value) {
+    return {};
+  }
+  return {
+    gridColumn: `${x + 1}`,
+    gridRow: `${y + 1}`,
+  };
+}
 
 function isPowered(cell: GridCell, x: number, y: number): boolean {
   if (!cell || cell === "power") return false;
@@ -129,6 +143,7 @@ function isShieldRecharging(x: number, y: number): boolean {
         :key="`${x}-${y}`"
         class="ship-cell"
         :class="cellClass(cell, x, y)"
+        :style="cellGridStyle(x, y)"
         :disabled="isCellDisabled(cell)"
         :title="label(cell)"
         @click="onCellClick(x, y, cell)"

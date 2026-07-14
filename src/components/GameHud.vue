@@ -81,15 +81,6 @@ function blockLabel(type: BlockType): string {
         </button>
       </div>
 
-      <p v-if="state.campaignsWon < 3" class="hud__hint hud__hint--unlock">
-        После 3-й победы откроется пулемёт (1000 ₽, стрельба ×3)
-      </p>
-      <p v-if="state.mgunUnlocked" class="hud__hint hud__hint--unlock">
-        Пулемёт стреляет в 3 раза быстрее автопушки (1⚡)
-      </p>
-      <p v-if="state.campaignsWon < 2" class="hud__hint hud__hint--unlock">
-        После 2-й победы поле расширится до 7×7
-      </p>
       <p v-if="state.shieldUnlocked" class="hud__hint hud__hint--unlock">
         Щит защищает 3×3: метеориты бьют по HP щита, потом перезарядка (2⚡)
       </p>

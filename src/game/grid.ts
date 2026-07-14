@@ -113,6 +113,57 @@ export function canSellBlock(grid: GridCell[][], x: number, y: number): boolean 
 export function removeBlock(grid: GridCell[][], x: number, y: number): GridCell[][] {
   const next = grid.map((row) => [...row]);
   next[y][x] = null;
+  return pruneDisconnectedBlocks(next);
+}
+
+function findCorePosition(grid: GridCell[][]): { x: number; y: number } | null {
+  const size = grid.length;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (grid[y][x] === "core") {
+        return { x, y };
+      }
+    }
+  }
+  return null;
+}
+
+export function pruneDisconnectedBlocks(grid: GridCell[][]): GridCell[][] {
+  const core = findCorePosition(grid);
+  if (!core) {
+    return grid.map((row) => [...row]);
+  }
+
+  const size = grid.length;
+  const connected = Array.from({ length: size }, () => Array<boolean>(size).fill(false));
+  const queue: { x: number; y: number }[] = [core];
+  connected[core.y][core.x] = true;
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const { dx, dy } of DIRECTIONS) {
+      const nx = current.x + dx;
+      const ny = current.y + dy;
+      if (
+        !isInsideGrid(nx, ny, grid) ||
+        grid[ny][nx] === null ||
+        connected[ny][nx]
+      ) {
+        continue;
+      }
+      connected[ny][nx] = true;
+      queue.push({ x: nx, y: ny });
+    }
+  }
+
+  const next = grid.map((row) => [...row]);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (next[y][x] !== null && !connected[y][x]) {
+        next[y][x] = null;
+      }
+    }
+  }
   return next;
 }
 

@@ -1,4 +1,4 @@
-import { COMBAT_WAVES, DIFFICULTY_LABELS, getBlockCost } from "./constants";
+import { COMBAT_WAVES, DIFFICULTY_LABELS, STATUS_MESSAGE_DURATION_MS, getBlockCost } from "./constants";
 import {
   type CombatState,
   buildShipPosition,
@@ -82,6 +82,7 @@ export class Game {
   private nextMeteoriteId = 1;
   private statusMessage: string | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private messageTimer: ReturnType<typeof setTimeout> | null = null;
   private combatStartMoney = 0;
   private arenaWidth = window.innerWidth;
   private arenaHeight = window.innerHeight;
@@ -114,6 +115,7 @@ export class Game {
 
   start(): void {
     this.syncProgress();
+    this.armStatusMessageDismiss();
     this.lastTime = performance.now();
     this.emit();
     this.tick(this.lastTime);
@@ -126,6 +128,10 @@ export class Game {
     }
     window.removeEventListener("resize", this.onResize);
     this.input.destroy();
+    if (this.messageTimer !== null) {
+      clearTimeout(this.messageTimer);
+      this.messageTimer = null;
+    }
     this.persist();
   }
 
@@ -177,13 +183,19 @@ export class Game {
       return;
     }
 
-    const cell = this.grid[y][x];
-    if (cell === null || cell === "core") {
-      return;
-    }
-
+    const before = this.grid.map((row) => [...row]);
     this.grid = removeBlock(this.grid, x, y);
-    this.money += getBlockCost(cell);
+
+    let refund = 0;
+    for (let py = 0; py < before.length; py++) {
+      for (let px = 0; px < before.length; px++) {
+        const block = before[py][px];
+        if (block && this.grid[py][px] === null) {
+          refund += getBlockCost(block);
+        }
+      }
+    }
+    this.money += refund;
     this.scheduleSave();
     this.emit();
   }
@@ -205,16 +217,19 @@ export class Game {
     this.nextMeteoriteId = 1;
     this.mode = "combat";
     if (attackTier >= 4) {
-      this.statusMessage =
-        "Четвёртая атака! Щитовики снижают урон метеоритам в радиусе. WASD — двигать корабль";
+      this.setStatusMessage(
+        "Четвёртая атака! Щитовики снижают урон метеоритам в радиусе. WASD — двигать корабль",
+      );
     } else if (attackTier >= 3) {
-      this.statusMessage =
-        "Третья атака! Появились хилеры — лечат метеориты рядом. WASD — двигать корабль";
+      this.setStatusMessage(
+        "Третья атака! Появились хилеры — лечат метеориты рядом. WASD — двигать корабль",
+      );
     } else if (attackTier >= 2) {
-      this.statusMessage =
-        "Вторая атака! Большие метеориты. С 3-й волны — хилеры. WASD — двигать корабль";
+      this.setStatusMessage(
+        "Вторая атака! Большие метеориты. С 3-й волны — хилеры. WASD — двигать корабль",
+      );
     } else {
-      this.statusMessage = "Бой начался! WASD — двигать корабль";
+      this.setStatusMessage("Бой начался! WASD — двигать корабль");
     }
     this.scheduleSave();
     this.emit();
@@ -230,14 +245,41 @@ export class Game {
     this.selectedBlock = null;
     this.sellMode = false;
     this.combat = null;
-    this.statusMessage = message;
+    this.setStatusMessage(message);
     this.emit();
   }
 
   dismissMessage(): void {
+    if (this.messageTimer !== null) {
+      clearTimeout(this.messageTimer);
+      this.messageTimer = null;
+    }
     this.statusMessage = null;
     this.emit();
   }
+
+  private setStatusMessage = (message: string | null): void => {
+    if (this.messageTimer !== null) {
+      clearTimeout(this.messageTimer);
+      this.messageTimer = null;
+    }
+    this.statusMessage = message;
+    this.armStatusMessageDismiss();
+  };
+
+  private armStatusMessageDismiss = (): void => {
+    if (this.statusMessage === null) {
+      return;
+    }
+    if (this.messageTimer !== null) {
+      clearTimeout(this.messageTimer);
+    }
+    this.messageTimer = setTimeout(() => {
+      this.statusMessage = null;
+      this.messageTimer = null;
+      this.emit();
+    }, STATUS_MESSAGE_DURATION_MS);
+  };
 
   private tick = (now: number): void => {
     const dt = Math.min((now - this.lastTime) / 1000, 0.1);
@@ -278,15 +320,23 @@ export class Game {
         this.money = this.combatStartMoney + this.combat.combatMoney;
         this.campaignsWon += 1;
         if (this.campaignsWon === 1) {
-          this.statusMessage = `Победа! +${this.combat.combatMoney} за переработку. Разблокирован блок: Щит!`;
+          this.setStatusMessage(
+            `Победа! +${this.combat.combatMoney} за переработку. Разблокирован блок: Щит!`,
+          );
         } else if (this.campaignsWon === 2) {
           this.grid = expandGrid(this.grid);
           this.persistIfNeeded();
-          this.statusMessage = `Победа! +${this.combat.combatMoney} за переработку. Поле строительства расширено до 7×7!`;
+          this.setStatusMessage(
+            `Победа! +${this.combat.combatMoney} за переработку. Поле строительства расширено до 7×7!`,
+          );
         } else if (this.campaignsWon === 3) {
-          this.statusMessage = `Победа! +${this.combat.combatMoney} за переработку. Разблокирован блок: Пулемёт!`;
+          this.setStatusMessage(
+            `Победа! +${this.combat.combatMoney} за переработку. Разблокирован блок: Пулемёт!`,
+          );
         } else {
-          this.statusMessage = `Победа! Все волны пройдены. +${this.combat.combatMoney} за переработку.`;
+          this.setStatusMessage(
+            `Победа! Все волны пройдены. +${this.combat.combatMoney} за переработку.`,
+          );
         }
         this.mode = "build";
         this.combat = null;

@@ -38,6 +38,7 @@ export const SHIELD_MAX_HP = 30;
 export const SHIELD_RECHARGE_TIME_SEC = 8;
 export const SAVE_KEY = "2d-starfight-save";
 export const SAVE_VERSION = 4;
+export const STATUS_MESSAGE_DURATION_MS = 4000;
 
 export const BLOCK_ENERGY_REQUIRED = {
   core: 0,

@@ -6,6 +6,14 @@ import {
   COMBAT_WAVES,
   DIFFICULTY_METEORITE_COUNTS,
   DIFFICULTY_METEORITE_COUNTS_HARD,
+  DIFFICULTY_METEORITE_COUNTS_TIER3,
+  DIFFICULTY_METEORITE_COUNTS_TIER4,
+  HEALER_HEAL_AMOUNT,
+  HEALER_HEAL_INTERVAL_SEC,
+  HEALER_HEAL_RADIUS,
+  HEALER_METEORITE_HP,
+  HEALER_METEORITE_SPAWN_CHANCE,
+  MACHINEGUN_FIRE_INTERVAL_SEC,
   METEORITE_HIT_RADIUS,
   METEORITE_HITS_TO_DESTROY,
   METEORITE_SPAWN_INTERVAL_MAX,
@@ -14,9 +22,15 @@ import {
   PROCESSOR_REWARD,
   PROCESSOR_TIME_SEC,
   PROJECTILE_HIT_RADIUS,
+  SHIELDER_AURA_RADIUS,
+  SHIELDER_DAMAGE_REDUCTION,
+  SHIELDER_METEORITE_HP,
+  SHIELDER_METEORITE_SPAWN_CHANCE,
   SHIELD_MAX_HP,
   SHIELD_RECHARGE_TIME_SEC,
   SHIP_MOVE_SPEED,
+  COMBAT_CELL_SIZE,
+  COMBAT_CELL_SIZE_LARGE,
 } from "./constants";
 import {
   cellWorldPos,
@@ -35,18 +49,24 @@ import type {
   Difficulty,
   GridCell,
   Meteorite,
+  MeteoriteKind,
   PendingMeteorite,
   ProcessorJob,
   Projectile,
   ShieldRuntimeState,
 } from "./types";
 
-export const COMBAT_CELL_SIZE = 72;
+export { COMBAT_CELL_SIZE, COMBAT_CELL_SIZE_LARGE } from "./constants";
+
+export function combatCellSize(gridDimension: number): number {
+  return gridDimension >= 7 ? COMBAT_CELL_SIZE_LARGE : COMBAT_CELL_SIZE;
+}
 
 export interface CombatState {
   difficulty: Difficulty;
   waveIndex: number;
   attackTier: number;
+  gridDimension: number;
   shipX: number;
   shipY: number;
   meteorites: Meteorite[];
@@ -128,13 +148,15 @@ export function createCombatState(
   arenaWidth: number,
   arenaHeight: number,
   attackTier: number,
+  gridDimension: number,
 ): CombatState {
-  const gridSize = gridPixelSize(COMBAT_CELL_SIZE);
+  const gridSize = gridPixelSize(combatCellSize(gridDimension), gridDimension);
 
   return {
     difficulty,
     waveIndex: 0,
     attackTier,
+    gridDimension,
     shipX: Math.max(24, arenaWidth * 0.08),
     shipY: (arenaHeight - gridSize.height) / 2,
     meteorites: [],
@@ -158,8 +180,58 @@ function cellKey(x: number, y: number): string {
 }
 
 function getWaveCount(attackTier: number, difficulty: Difficulty): number {
+  if (attackTier >= 4) {
+    return DIFFICULTY_METEORITE_COUNTS_TIER4[difficulty];
+  }
+  if (attackTier >= 3) {
+    return DIFFICULTY_METEORITE_COUNTS_TIER3[difficulty];
+  }
   const table = attackTier >= 2 ? DIFFICULTY_METEORITE_COUNTS_HARD : DIFFICULTY_METEORITE_COUNTS;
   return table[difficulty];
+}
+
+function healersEnabled(attackTier: number, waveIndex: number): boolean {
+  return attackTier >= 3 || (attackTier >= 2 && waveIndex >= 2);
+}
+
+function shieldersEnabled(attackTier: number): boolean {
+  return attackTier >= 4;
+}
+
+function pickMeteoriteKind(attackTier: number, waveIndex: number): {
+  kind: MeteoriteKind;
+  hp: number;
+  critImmune: boolean;
+} {
+  const roll = Math.random();
+  let threshold = 0;
+
+  if (shieldersEnabled(attackTier)) {
+    threshold += SHIELDER_METEORITE_SPAWN_CHANCE;
+    if (roll < threshold) {
+      return { kind: "shielder", hp: SHIELDER_METEORITE_HP, critImmune: false };
+    }
+  }
+
+  if (healersEnabled(attackTier, waveIndex)) {
+    threshold += HEALER_METEORITE_SPAWN_CHANCE;
+    if (roll < threshold) {
+      return { kind: "healer", hp: HEALER_METEORITE_HP, critImmune: false };
+    }
+  }
+
+  if (attackTier >= 2) {
+    threshold += BIG_METEORITE_SPAWN_CHANCE;
+    if (roll < threshold) {
+      return {
+        kind: "big",
+        hp: BIG_METEORITE_HITS_TO_DESTROY,
+        critImmune: true,
+      };
+    }
+  }
+
+  return { kind: "normal", hp: METEORITE_HITS_TO_DESTROY, critImmune: false };
 }
 
 function spawnMeteorite(
@@ -169,16 +241,19 @@ function spawnMeteorite(
   shipX: number,
   shipY: number,
   attackTier: number,
+  gridDimension: number,
+  waveIndex: number,
 ): Meteorite {
+  const cellSize = combatCellSize(gridDimension);
   const x = arenaWidth + 30 + Math.random() * 120;
   const y = 60 + Math.random() * Math.max(120, arenaHeight - 120);
-  const gridSize = gridPixelSize(COMBAT_CELL_SIZE);
+  const gridSize = gridPixelSize(cellSize, gridDimension);
   const targetX = shipX + gridSize.width / 2;
   const targetY = shipY + gridSize.height / 2;
   const dx = targetX - x;
   const dy = targetY - y;
   const dist = Math.hypot(dx, dy) || 1;
-  const isBig = attackTier >= 2 && Math.random() < BIG_METEORITE_SPAWN_CHANCE;
+  const { kind, hp, critImmune } = pickMeteoriteKind(attackTier, waveIndex);
 
   return {
     id,
@@ -186,9 +261,11 @@ function spawnMeteorite(
     y,
     vx: (dx / dist) * METEORITE_SPEED,
     vy: (dy / dist) * METEORITE_SPEED,
-    hp: isBig ? BIG_METEORITE_HITS_TO_DESTROY : METEORITE_HITS_TO_DESTROY,
-    kind: isBig ? "big" : "normal",
-    critImmune: isBig,
+    hp,
+    maxHp: hp,
+    kind,
+    critImmune,
+    healTimer: kind === "healer" ? HEALER_HEAL_INTERVAL_SEC : 0,
   };
 }
 
@@ -198,8 +275,9 @@ export function updateShipMovement(
   dt: number,
   arenaWidth: number,
   arenaHeight: number,
+  gridDimension: number,
 ): void {
-  const gridSize = gridPixelSize(COMBAT_CELL_SIZE);
+  const gridSize = gridPixelSize(combatCellSize(gridDimension), gridDimension);
   const minX = 16;
   const maxX = arenaWidth * 0.55 - gridSize.width;
   const minY = 72;
@@ -323,16 +401,56 @@ function aimProjectileAt(
   projectile.vy = (dy / dist) * BULLET_SPEED;
 }
 
+function isInShielderAura(target: Meteorite, meteorites: Meteorite[]): boolean {
+  for (const source of meteorites) {
+    if (source.kind !== "shielder" || source.id === target.id) {
+      continue;
+    }
+    const dist = Math.hypot(target.x - source.x, target.y - source.y);
+    if (dist <= SHIELDER_AURA_RADIUS) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function applyProjectileDamage(
+  target: Meteorite,
+  meteorites: Meteorite[],
+  damage: number,
+): void {
+  let actualDamage = damage;
+  if (isInShielderAura(target, meteorites)) {
+    actualDamage *= 1 - SHIELDER_DAMAGE_REDUCTION;
+  }
+  target.hp -= actualDamage;
+}
+
 function updateCannons(
   state: CombatState,
   grid: GridCell[][],
   energy: number[][],
   dt: number,
 ): void {
-  const cannons = listBlocksOfType(grid, "cannon");
+  const cellSize = combatCellSize(grid.length);
 
-  for (const { x, y } of cannons) {
-    if (!isBlockPowered(energy, x, y, "cannon")) {
+  fireWeaponBlocks(state, grid, energy, dt, "cannon", CANNON_FIRE_INTERVAL_SEC, cellSize);
+  fireWeaponBlocks(state, grid, energy, dt, "mgun", MACHINEGUN_FIRE_INTERVAL_SEC, cellSize);
+}
+
+function fireWeaponBlocks(
+  state: CombatState,
+  grid: GridCell[][],
+  energy: number[][],
+  dt: number,
+  blockType: "cannon" | "mgun",
+  fireInterval: number,
+  cellSize: number,
+): void {
+  const weapons = listBlocksOfType(grid, blockType);
+
+  for (const { x, y } of weapons) {
+    if (!isBlockPowered(energy, x, y, blockType)) {
       continue;
     }
 
@@ -345,7 +463,7 @@ function updateCannons(
       continue;
     }
 
-    const origin = cellWorldPos(x, y, state.shipX, state.shipY, COMBAT_CELL_SIZE);
+    const origin = cellWorldPos(x, y, state.shipX, state.shipY, cellSize);
     const nearest = findNearestMeteorite(origin.x, origin.y, state.meteorites);
 
     if (!nearest) {
@@ -361,7 +479,7 @@ function updateCannons(
     });
     const projectile = state.projectiles[state.projectiles.length - 1];
     aimProjectileAt(projectile, nearest.x, nearest.y);
-    state.cannonCooldowns.set(key, CANNON_FIRE_INTERVAL_SEC);
+    state.cannonCooldowns.set(key, fireInterval);
   }
 }
 
@@ -374,7 +492,8 @@ function updateProjectiles(state: CombatState, grid: GridCell[][], energy: numbe
 
     let hit: Meteorite | null = null;
     for (const meteorite of state.meteorites) {
-      const hitRadius = meteorite.kind === "big" ? 22 : PROJECTILE_HIT_RADIUS;
+      const hitRadius =
+        meteorite.kind === "big" ? 22 : PROJECTILE_HIT_RADIUS;
       const dist = Math.hypot(meteorite.x - projectile.x, meteorite.y - projectile.y);
       if (dist <= hitRadius) {
         hit = meteorite;
@@ -383,7 +502,7 @@ function updateProjectiles(state: CombatState, grid: GridCell[][], energy: numbe
     }
 
     if (hit) {
-      hit.hp -= 1;
+      applyProjectileDamage(hit, state.meteorites, 1);
       if (hit.hp <= 0) {
         state.meteorites = state.meteorites.filter((m) => m.id !== hit!.id);
         assignDestroyedMeteorite(state, grid, energy);
@@ -432,6 +551,7 @@ function updateMeteoriteMovement(
   arenaWidth: number,
   arenaHeight: number,
 ): GridCell[][] {
+  const cellSize = combatCellSize(grid.length);
   let nextGrid = grid.map((row) => [...row]);
   const remaining: Meteorite[] = [];
   const energy = computeEnergy(grid);
@@ -455,10 +575,10 @@ function updateMeteoriteMovement(
       meteorite.y,
       state.shipX,
       state.shipY,
-      COMBAT_CELL_SIZE,
+      cellSize,
     );
 
-    if (isInsideGrid(cell.x, cell.y) && shielded[cell.y][cell.x]) {
+    if (isInsideGrid(cell.x, cell.y, nextGrid) && shielded[cell.y][cell.x]) {
       const shield = findShieldProtectingCell(cell.x, cell.y, state.shieldStates);
       if (shield) {
         shield.hp -= meteorite.hp;
@@ -470,13 +590,13 @@ function updateMeteoriteMovement(
       continue;
     }
 
-    if (isInsideGrid(cell.x, cell.y) && nextGrid[cell.y][cell.x] !== null) {
+    if (isInsideGrid(cell.x, cell.y, nextGrid) && nextGrid[cell.y][cell.x] !== null) {
       const blockCenter = cellWorldPos(
         cell.x,
         cell.y,
         state.shipX,
         state.shipY,
-        COMBAT_CELL_SIZE,
+        cellSize,
       );
       const hitDist = Math.hypot(
         meteorite.x - blockCenter.x,
@@ -515,12 +635,38 @@ function tryAdvanceWaveIfNeeded(state: CombatState): void {
   state.spawnTimer = 0;
 }
 
+function updateHealerMeteors(state: CombatState, dt: number): void {
+  for (const healer of state.meteorites) {
+    if (healer.kind !== "healer") {
+      continue;
+    }
+
+    healer.healTimer -= dt;
+    if (healer.healTimer > 0) {
+      continue;
+    }
+
+    healer.healTimer = HEALER_HEAL_INTERVAL_SEC;
+
+    for (const target of state.meteorites) {
+      if (target.id === healer.id) {
+        continue;
+      }
+      const dist = Math.hypot(target.x - healer.x, target.y - healer.y);
+      if (dist <= HEALER_HEAL_RADIUS) {
+        target.hp = Math.min(target.maxHp, target.hp + HEALER_HEAL_AMOUNT);
+      }
+    }
+  }
+}
+
 function updateSpawning(
   state: CombatState,
   dt: number,
   nextId: { value: number },
   arenaWidth: number,
   arenaHeight: number,
+  gridDimension: number,
 ): void {
   tryAdvanceWaveIfNeeded(state);
 
@@ -541,6 +687,8 @@ function updateSpawning(
       state.shipX,
       state.shipY,
       state.attackTier,
+      gridDimension,
+      state.waveIndex,
     ),
   );
   state.spawnRemaining -= 1;
@@ -587,7 +735,7 @@ export function stepCombat(
     };
   }
 
-  updateSpawning(state, dt, nextMeteoriteId, arenaWidth, arenaHeight);
+  updateSpawning(state, dt, nextMeteoriteId, arenaWidth, arenaHeight, grid.length);
 
   const energy = computeEnergy(grid);
   if (state.shieldStates.length === 0) {
@@ -600,6 +748,7 @@ export function stepCombat(
   updateCannons(state, grid, energy, dt);
   updateProjectiles(state, grid, energy, dt);
   updateProcessorJobs(state, grid, energy, dt);
+  updateHealerMeteors(state, dt);
 
   let nextGrid = updateMeteoriteMovement(state, grid, dt, arenaWidth, arenaHeight);
 
@@ -647,8 +796,9 @@ export function stepCombat(
 export function buildShipPosition(
   arenaWidth: number,
   arenaHeight: number,
+  gridDimension: number,
 ): { shipX: number; shipY: number } {
-  const gridSize = gridPixelSize(COMBAT_CELL_SIZE);
+  const gridSize = gridPixelSize(combatCellSize(gridDimension), gridDimension);
   return {
     shipX: Math.max(24, arenaWidth * 0.06),
     shipY: (arenaHeight - gridSize.height) / 2,
@@ -658,8 +808,9 @@ export function buildShipPosition(
 export function centeredShipPosition(
   arenaWidth: number,
   arenaHeight: number,
+  gridDimension: number,
 ): { shipX: number; shipY: number } {
-  const gridSize = gridPixelSize(COMBAT_CELL_SIZE);
+  const gridSize = gridPixelSize(combatCellSize(gridDimension), gridDimension);
   return {
     shipX: (arenaWidth - gridSize.width) / 2,
     shipY: (arenaHeight - gridSize.height) / 2,

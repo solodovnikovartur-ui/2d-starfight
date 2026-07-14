@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { BLOCK_COST, BLOCK_ENERGY_REQUIRED, BLOCK_LABELS } from "../game/constants";
+import { BLOCK_ENERGY_REQUIRED, BLOCK_LABELS, getBlockCost } from "../game/constants";
 import type { Game, GameState } from "../game/Game";
 import type { BlockType } from "../game/types";
 import BlockArt from "./BlockArt.vue";
@@ -15,15 +15,17 @@ const buildBlocks = computed((): BlockType[] => {
   if (props.state.shieldUnlocked) {
     blocks.push("shield");
   }
+  if (props.state.mgunUnlocked) {
+    blocks.push("mgun");
+  }
   return blocks;
 });
 
 function blockLabel(type: BlockType): string {
   const energy = BLOCK_ENERGY_REQUIRED[type];
-  if (energy > 0) {
-    return `${BLOCK_LABELS[type]} (${energy}⚡)`;
-  }
-  return BLOCK_LABELS[type];
+  const cost = getBlockCost(type);
+  const energyLabel = energy > 0 ? ` (${energy}⚡)` : "";
+  return `${BLOCK_LABELS[type]}${energyLabel} — ${cost} ₽`;
 }
 </script>
 
@@ -49,6 +51,14 @@ function blockLabel(type: BlockType): string {
         </span>
       </div>
       <div class="hud__panel">
+        <span class="hud__label">Поле</span>
+        <span class="hud__value">{{ state.gridSize }}×{{ state.gridSize }}</span>
+      </div>
+      <div class="hud__panel">
+        <span class="hud__label">Побед</span>
+        <span class="hud__value">{{ state.campaignsWon }}</span>
+      </div>
+      <div class="hud__panel">
         <span class="hud__label">Режим</span>
         <span class="hud__value">
           {{ state.mode === "build" ? "Строительство" : "Бой" }}
@@ -57,7 +67,7 @@ function blockLabel(type: BlockType): string {
     </div>
 
     <aside v-if="state.mode === 'build'" class="hud__sidebar">
-      <p class="hud__section-title">Построить ({{ BLOCK_COST }} ₽)</p>
+      <p class="hud__section-title">Построить</p>
       <div class="hud__palette">
         <button
           v-for="block in buildBlocks"
@@ -71,11 +81,20 @@ function blockLabel(type: BlockType): string {
         </button>
       </div>
 
+      <p v-if="state.campaignsWon < 3" class="hud__hint hud__hint--unlock">
+        После 3-й победы откроется пулемёт (1000 ₽, стрельба ×3)
+      </p>
+      <p v-if="state.mgunUnlocked" class="hud__hint hud__hint--unlock">
+        Пулемёт стреляет в 3 раза быстрее автопушки (1⚡)
+      </p>
+      <p v-if="state.campaignsWon < 2" class="hud__hint hud__hint--unlock">
+        После 2-й победы поле расширится до 7×7
+      </p>
       <p v-if="state.shieldUnlocked" class="hud__hint hud__hint--unlock">
         Щит защищает 3×3: метеориты бьют по HP щита, потом перезарядка (2⚡)
       </p>
 
-      <p class="hud__section-title hud__section-title--spaced">Продать (+{{ BLOCK_COST }} ₽)</p>
+      <p class="hud__section-title hud__section-title--spaced">Продать</p>
       <button
         class="hud__btn hud__btn--sell"
         :class="{ 'hud__btn--active': state.sellMode }"
@@ -85,7 +104,7 @@ function blockLabel(type: BlockType): string {
       </button>
 
       <p v-if="state.sellMode" class="hud__hint">
-        Нажми на блок, чтобы продать за {{ BLOCK_COST }} ₽
+        Нажми на блок, чтобы продать по его стоимости
       </p>
       <p v-else-if="state.selectedBlock" class="hud__hint">
         Нажми на пустую клетку рядом с кораблём

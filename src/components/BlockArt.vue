@@ -51,6 +51,15 @@ defineProps<{
       />
     </g>
 
+    <!-- Пулемёт -->
+    <g v-else-if="type === 'mgun'">
+      <rect x="8" y="34" width="22" height="16" rx="4" fill="#4a3a2a" stroke="#ddaa66" stroke-width="2" />
+      <rect x="24" y="28" width="18" height="8" rx="2" fill="#6a4a2a" stroke="#ffcc88" stroke-width="1.5" />
+      <rect x="40" y="28" width="18" height="8" rx="2" fill="#6a4a2a" stroke="#ffcc88" stroke-width="1.5" />
+      <rect x="54" y="30" width="6" height="4" rx="1" fill="#ffee88" />
+      <circle cx="16" cy="42" r="3" fill="#3a2818" />
+    </g>
+
     <!-- Щит -->
     <g v-else-if="type === 'shield'">
       <path

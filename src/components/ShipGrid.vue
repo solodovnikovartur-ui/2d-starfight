@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { BLOCK_ENERGY_REQUIRED, BLOCK_LABELS, GRID_SIZE, PROCESSOR_TIME_SEC, SHIELD_RECHARGE_TIME_SEC } from "../game/constants";
+import { BLOCK_ENERGY_REQUIRED, BLOCK_LABELS, PROCESSOR_TIME_SEC, SHIELD_RECHARGE_TIME_SEC } from "../game/constants";
 import type { GameState } from "../game/Game";
 import type { GridCell } from "../game/types";
 import BlockArt from "./BlockArt.vue";
@@ -17,9 +17,10 @@ const emit = defineEmits<{
 const isBuildMode = computed(() => props.state.mode === "build");
 
 const cells = computed(() => {
+  const size = props.state.grid.length;
   const list: { x: number; y: number; cell: GridCell }[] = [];
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
       list.push({ x, y, cell: props.state.grid[y][x] });
     }
   }
@@ -39,6 +40,7 @@ function cellClass(cell: GridCell, x: number, y: number): Record<string, boolean
     "ship-cell--core": cell === "core",
     "ship-cell--processor": cell === "processor",
     "ship-cell--cannon": cell === "cannon",
+    "ship-cell--mgun": cell === "mgun",
     "ship-cell--power": cell === "power",
     "ship-cell--shield": cell === "shield",
     "ship-cell--shield-recharging": cell === "shield" && isShieldRecharging(x, y),
@@ -115,7 +117,13 @@ function isShieldRecharging(x: number, y: number): boolean {
       top: `${state.shipY}px`,
     }"
   >
-    <div class="ship-grid">
+    <div
+      class="ship-grid"
+      :style="{
+        gridTemplateColumns: `repeat(${state.gridSize}, var(--cell-size))`,
+        gridTemplateRows: `repeat(${state.gridSize}, var(--cell-size))`,
+      }"
+    >
       <button
         v-for="{ x, y, cell } in cells"
         :key="`${x}-${y}`"

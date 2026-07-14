@@ -1,8 +1,8 @@
-import { BLOCK_COST, COMBAT_WAVES, DIFFICULTY_LABELS } from "./constants";
+import { COMBAT_WAVES, DIFFICULTY_LABELS, getBlockCost } from "./constants";
 import {
   type CombatState,
-  COMBAT_CELL_SIZE,
   buildShipPosition,
+  combatCellSize,
   createCombatState,
   stepCombat,
   updateShipMovement,
@@ -13,6 +13,8 @@ import {
   computeEnergy,
   computeShieldCoverage,
   createInitialGrid,
+  ensureGridSizeForCampaigns,
+  expandGrid,
   placeBlock,
   removeBlock,
 } from "./grid";
@@ -45,6 +47,7 @@ export interface GameState {
   selectedBlock: BlockType | null;
   sellMode: boolean;
   shieldUnlocked: boolean;
+  mgunUnlocked: boolean;
   campaignsWon: number;
   attackTier: number;
   combatWave: number;
@@ -57,6 +60,7 @@ export interface GameState {
   combatMoney: number;
   statusMessage: string | null;
   cellSize: number;
+  gridSize: number;
   shipX: number;
   shipY: number;
   arenaWidth: number;
@@ -96,9 +100,10 @@ export class Game {
     const saved = loadSave();
     if (saved) {
       this.money = saved.money;
-      this.grid = saved.grid.map((row) => [...row]);
       this.campaignsWon = saved.campaignsWon;
+      this.grid = ensureGridSizeForCampaigns(saved.grid, this.campaignsWon);
       this.statusMessage = "Прогресс загружен";
+      this.persistIfNeeded();
     } else {
       const fresh = createFreshSave();
       this.money = fresh.money;
@@ -108,6 +113,7 @@ export class Game {
   }
 
   start(): void {
+    this.syncProgress();
     this.lastTime = performance.now();
     this.emit();
     this.tick(this.lastTime);
@@ -130,6 +136,9 @@ export class Game {
     if (type === "shield" && this.campaignsWon < 1) {
       return;
     }
+    if (type === "mgun" && this.campaignsWon < 3) {
+      return;
+    }
     this.selectedBlock = this.selectedBlock === type ? null : type;
     this.sellMode = false;
     this.emit();
@@ -150,12 +159,12 @@ export class Game {
     if (this.mode !== "build" || !this.selectedBlock || this.sellMode) {
       return;
     }
-    if (!canPlaceBlock(this.grid, x, y, this.money)) {
+    if (!canPlaceBlock(this.grid, x, y, this.money, this.selectedBlock)) {
       return;
     }
 
     this.grid = placeBlock(this.grid, x, y, this.selectedBlock);
-    this.money -= BLOCK_COST;
+    this.money -= getBlockCost(this.selectedBlock);
     this.scheduleSave();
     this.emit();
   }
@@ -168,8 +177,13 @@ export class Game {
       return;
     }
 
+    const cell = this.grid[y][x];
+    if (cell === null || cell === "core") {
+      return;
+    }
+
     this.grid = removeBlock(this.grid, x, y);
-    this.money += BLOCK_COST;
+    this.money += getBlockCost(cell);
     this.scheduleSave();
     this.emit();
   }
@@ -179,20 +193,29 @@ export class Game {
       return;
     }
 
-    const attackTier = this.campaignsWon >= 1 ? 2 : 1;
+    const attackTier = this.getNextAttackTier();
     this.combatStartMoney = this.money;
     this.combat = createCombatState(
       COMBAT_WAVES[0],
       this.arenaWidth,
       this.arenaHeight,
       attackTier,
+      this.grid.length,
     );
     this.nextMeteoriteId = 1;
     this.mode = "combat";
-    this.statusMessage =
-      attackTier >= 2
-        ? "Вторая атака! Больше метеоритов и появились большие. WASD — двигать корабль"
-        : "Бой начался! WASD — двигать корабль";
+    if (attackTier >= 4) {
+      this.statusMessage =
+        "Четвёртая атака! Щитовики снижают урон метеоритам в радиусе. WASD — двигать корабль";
+    } else if (attackTier >= 3) {
+      this.statusMessage =
+        "Третья атака! Появились хилеры — лечат метеориты рядом. WASD — двигать корабль";
+    } else if (attackTier >= 2) {
+      this.statusMessage =
+        "Вторая атака! Большие метеориты. С 3-й волны — хилеры. WASD — двигать корабль";
+    } else {
+      this.statusMessage = "Бой начался! WASD — двигать корабль";
+    }
     this.scheduleSave();
     this.emit();
   }
@@ -228,7 +251,14 @@ export class Game {
       return;
     }
 
-    updateShipMovement(this.combat, this.input, dt, this.arenaWidth, this.arenaHeight);
+    updateShipMovement(
+      this.combat,
+      this.input,
+      dt,
+      this.arenaWidth,
+      this.arenaHeight,
+      this.grid.length,
+    );
 
     const idRef = { value: this.nextMeteoriteId };
     const result = stepCombat(
@@ -249,6 +279,12 @@ export class Game {
         this.campaignsWon += 1;
         if (this.campaignsWon === 1) {
           this.statusMessage = `Победа! +${this.combat.combatMoney} за переработку. Разблокирован блок: Щит!`;
+        } else if (this.campaignsWon === 2) {
+          this.grid = expandGrid(this.grid);
+          this.persistIfNeeded();
+          this.statusMessage = `Победа! +${this.combat.combatMoney} за переработку. Поле строительства расширено до 7×7!`;
+        } else if (this.campaignsWon === 3) {
+          this.statusMessage = `Победа! +${this.combat.combatMoney} за переработку. Разблокирован блок: Пулемёт!`;
         } else {
           this.statusMessage = `Победа! Все волны пройдены. +${this.combat.combatMoney} за переработку.`;
         }
@@ -280,20 +316,49 @@ export class Game {
     writeSave(snapshotFromGame(this.money, this.grid, this.campaignsWon));
   }
 
+  private syncProgress(): void {
+    const nextGrid = ensureGridSizeForCampaigns(this.grid, this.campaignsWon);
+    if (nextGrid.length !== this.grid.length) {
+      this.grid = nextGrid;
+      this.persistIfNeeded();
+    }
+  }
+
+  private persistIfNeeded(): void {
+    if (this.mode === "combat") {
+      return;
+    }
+    writeSave(snapshotFromGame(this.money, this.grid, this.campaignsWon));
+  }
+
+  private getNextAttackTier(): number {
+    if (this.campaignsWon >= 3) {
+      return 4;
+    }
+    if (this.campaignsWon >= 2) {
+      return 3;
+    }
+    if (this.campaignsWon >= 1) {
+      return 2;
+    }
+    return 1;
+  }
+
   private getShipPosition(): { shipX: number; shipY: number } {
     if (this.mode === "combat" && this.combat) {
       return { shipX: this.combat.shipX, shipY: this.combat.shipY };
     }
-    return buildShipPosition(this.arenaWidth, this.arenaHeight);
+    return buildShipPosition(this.arenaWidth, this.arenaHeight, this.grid.length);
   }
 
   private emit(): void {
+    this.syncProgress();
     const inCombat = this.mode === "combat" && this.combat !== null;
     const shipPos = this.getShipPosition();
     const energy = computeEnergy(this.grid);
     const shieldStates = inCombat && this.combat ? this.combat.shieldStates : [];
     const attackTier =
-      inCombat && this.combat ? this.combat.attackTier : this.campaignsWon >= 1 ? 2 : 1;
+      inCombat && this.combat ? this.combat.attackTier : this.getNextAttackTier();
 
     this.onUpdate({
       mode: this.mode,
@@ -305,8 +370,10 @@ export class Game {
       selectedBlock: this.selectedBlock,
       sellMode: this.sellMode,
       shieldUnlocked: this.campaignsWon >= 1,
+      mgunUnlocked: this.campaignsWon >= 3,
       campaignsWon: this.campaignsWon,
       attackTier,
+      gridSize: this.grid.length,
       combatWave: inCombat && this.combat ? this.combat.waveIndex + 1 : 0,
       combatWaveTotal: COMBAT_WAVES.length,
       combatWaveLabel: inCombat && this.combat
@@ -318,7 +385,7 @@ export class Game {
       combatProcessorJobs: this.combat?.processorJobs ?? [],
       combatMoney: this.combat?.combatMoney ?? 0,
       statusMessage: this.statusMessage,
-      cellSize: COMBAT_CELL_SIZE,
+      cellSize: combatCellSize(this.grid.length),
       shipX: shipPos.shipX,
       shipY: shipPos.shipY,
       arenaWidth: this.arenaWidth,

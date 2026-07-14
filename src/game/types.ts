@@ -8,13 +8,13 @@ export interface Size {
   height: number;
 }
 
-export type BlockType = "core" | "processor" | "cannon" | "power" | "shield";
+export type BlockType = "core" | "processor" | "cannon" | "mgun" | "power" | "shield";
 
 export type GridCell = BlockType | null;
 
 export type Difficulty = keyof typeof import("./constants").DIFFICULTY_METEORITE_COUNTS;
 
-export type MeteoriteKind = "normal" | "big";
+export type MeteoriteKind = "normal" | "big" | "healer" | "shielder";
 
 export type GameMode = "build" | "combat";
 
@@ -33,8 +33,10 @@ export interface Meteorite {
   vx: number;
   vy: number;
   hp: number;
+  maxHp: number;
   kind: MeteoriteKind;
   critImmune: boolean;
+  healTimer: number;
 }
 
 export interface ProcessorJob {

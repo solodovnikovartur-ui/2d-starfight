@@ -1,5 +1,5 @@
 import { SAVE_KEY, SAVE_VERSION, START_MONEY } from "./constants";
-import { createInitialGrid } from "./grid";
+import { createInitialGrid, ensureGridSizeForCampaigns } from "./grid";
 import type { GridCell, SaveData } from "./types";
 
 export function createFreshSave(): SaveData {
@@ -21,14 +21,16 @@ export function loadSave(): SaveData | null {
     if (!Array.isArray(data.grid)) {
       return null;
     }
-    if (data.version !== SAVE_VERSION && data.version !== 1) {
+    if (data.version !== SAVE_VERSION && data.version !== 1 && data.version !== 2 && data.version !== 3) {
       return null;
     }
+    const campaignsWon = data.campaignsWon ?? 0;
+    const grid = ensureGridSizeForCampaigns(data.grid as GridCell[][], campaignsWon);
     return {
       version: SAVE_VERSION,
       money: data.money ?? START_MONEY,
-      grid: data.grid as GridCell[][],
-      campaignsWon: data.campaignsWon ?? 0,
+      grid,
+      campaignsWon,
     };
   } catch {
     return null;

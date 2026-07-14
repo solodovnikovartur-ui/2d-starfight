@@ -1,4 +1,12 @@
-import { BLOCK_COST, BLOCK_ENERGY_REQUIRED, CENTER, GRID_GAP, GRID_SIZE, SHIELD_RADIUS } from "./constants";
+import {
+  BLOCK_ENERGY_REQUIRED,
+  CENTER,
+  getBlockCost,
+  GRID_GAP,
+  GRID_SIZE,
+  GRID_SIZE_LARGE,
+  SHIELD_RADIUS,
+} from "./constants";
 import type { BlockType, GridCell, ShieldRuntimeState, Vec2 } from "./types";
 
 const DIRECTIONS = [
@@ -8,6 +16,10 @@ const DIRECTIONS = [
   { dx: 1, dy: 0 },
 ] as const;
 
+export function getGridDimension(grid: GridCell[][]): number {
+  return grid.length;
+}
+
 export function createInitialGrid(): GridCell[][] {
   const grid = Array.from({ length: GRID_SIZE }, () =>
     Array<GridCell>(GRID_SIZE).fill(null),
@@ -16,15 +28,47 @@ export function createInitialGrid(): GridCell[][] {
   return grid;
 }
 
-export function isInsideGrid(x: number, y: number): boolean {
-  return x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE;
+export function expandGrid(grid: GridCell[][]): GridCell[][] {
+  const oldSize = grid.length;
+  if (oldSize >= GRID_SIZE_LARGE) {
+    return grid.map((row) => [...row]);
+  }
+
+  const newSize = GRID_SIZE_LARGE;
+  const offset = Math.floor((newSize - oldSize) / 2);
+  const next = Array.from({ length: newSize }, () =>
+    Array<GridCell>(newSize).fill(null),
+  );
+
+  for (let y = 0; y < oldSize; y++) {
+    for (let x = 0; x < oldSize; x++) {
+      next[y + offset][x + offset] = grid[y][x];
+    }
+  }
+
+  return next;
+}
+
+export function ensureGridSizeForCampaigns(
+  grid: GridCell[][],
+  campaignsWon: number,
+): GridCell[][] {
+  if (campaignsWon >= 2 && grid.length < GRID_SIZE_LARGE) {
+    return expandGrid(grid);
+  }
+  return grid.map((row) => [...row]);
+}
+
+export function isInsideGrid(x: number, y: number, grid: GridCell[][]): boolean {
+  const size = grid.length;
+  return x >= 0 && x < size && y >= 0 && y < size;
 }
 
 export function hasAdjacentBlock(grid: GridCell[][], x: number, y: number): boolean {
   for (const { dx, dy } of DIRECTIONS) {
     const nx = x + dx;
     const ny = y + dy;
-    if (isInsideGrid(nx, ny) && grid[ny][nx] !== null) {
+    if (isInsideGrid(nx, ny, grid) && grid[ny][nx] !== null) {
       return true;
     }
   }
@@ -36,11 +80,12 @@ export function canPlaceBlock(
   x: number,
   y: number,
   money: number,
+  blockType: BlockType,
 ): boolean {
-  if (!isInsideGrid(x, y) || grid[y][x] !== null) {
+  if (!isInsideGrid(x, y, grid) || grid[y][x] !== null) {
     return false;
   }
-  if (money < BLOCK_COST) {
+  if (money < getBlockCost(blockType)) {
     return false;
   }
   return hasAdjacentBlock(grid, x, y);
@@ -58,7 +103,7 @@ export function placeBlock(
 }
 
 export function canSellBlock(grid: GridCell[][], x: number, y: number): boolean {
-  if (!isInsideGrid(x, y)) {
+  if (!isInsideGrid(x, y, grid)) {
     return false;
   }
   const cell = grid[y][x];
@@ -72,19 +117,18 @@ export function removeBlock(grid: GridCell[][], x: number, y: number): GridCell[
 }
 
 export function computeEnergy(grid: GridCell[][]): number[][] {
-  const energy = Array.from({ length: GRID_SIZE }, () =>
-    Array<number>(GRID_SIZE).fill(0),
-  );
+  const size = grid.length;
+  const energy = Array.from({ length: size }, () => Array<number>(size).fill(0));
 
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
       if (grid[y][x] !== "power") {
         continue;
       }
       for (const { dx, dy } of DIRECTIONS) {
         const nx = x + dx;
         const ny = y + dy;
-        if (isInsideGrid(nx, ny) && grid[ny][nx] !== null) {
+        if (isInsideGrid(nx, ny, grid) && grid[ny][nx] !== null) {
           energy[ny][nx] += 1;
         }
       }
@@ -112,9 +156,8 @@ export function computeShieldCoverage(
   energy: number[][],
   shieldStates?: ShieldRuntimeState[],
 ): boolean[][] {
-  const covered = Array.from({ length: GRID_SIZE }, () =>
-    Array<boolean>(GRID_SIZE).fill(false),
-  );
+  const size = grid.length;
+  const covered = Array.from({ length: size }, () => Array<boolean>(size).fill(false));
 
   const shields = listBlocksOfType(grid, "shield");
   for (const { x, y } of shields) {
@@ -131,7 +174,7 @@ export function computeShieldCoverage(
       for (let dx = -SHIELD_RADIUS; dx <= SHIELD_RADIUS; dx++) {
         const nx = x + dx;
         const ny = y + dy;
-        if (isInsideGrid(nx, ny)) {
+        if (isInsideGrid(nx, ny, grid)) {
           covered[ny][nx] = true;
         }
       }
@@ -164,9 +207,10 @@ export function listBlocksOfType(
   grid: GridCell[][],
   type: BlockType,
 ): { x: number; y: number }[] {
+  const size = grid.length;
   const blocks: { x: number; y: number }[] = [];
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
       if (grid[y][x] === type) {
         blocks.push({ x, y });
       }
@@ -175,10 +219,13 @@ export function listBlocksOfType(
   return blocks;
 }
 
-export function gridPixelSize(cellSize: number): { width: number; height: number } {
+export function gridPixelSize(
+  cellSize: number,
+  gridDimension: number,
+): { width: number; height: number } {
   return {
-    width: GRID_SIZE * cellSize + (GRID_SIZE - 1) * GRID_GAP,
-    height: GRID_SIZE * cellSize + (GRID_SIZE - 1) * GRID_GAP,
+    width: gridDimension * cellSize + (gridDimension - 1) * GRID_GAP,
+    height: gridDimension * cellSize + (gridDimension - 1) * GRID_GAP,
   };
 }
 

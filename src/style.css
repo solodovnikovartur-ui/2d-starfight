@@ -54,8 +54,6 @@ body {
 
 .ship-grid {
   display: grid;
-  grid-template-columns: repeat(5, var(--cell-size));
-  grid-template-rows: repeat(5, var(--cell-size));
   gap: 4px;
 }
 
@@ -133,6 +131,11 @@ body {
   border-color: #cc6a6a;
 }
 
+.ship-cell--mgun {
+  background: linear-gradient(135deg, #4a3a1a, #302810);
+  border-color: #ddaa44;
+}
+
 .ship-cell--power {
   background: linear-gradient(135deg, #4a4a1a, #303010);
   border-color: #cccc44;
@@ -206,6 +209,101 @@ body {
 
 .meteorite--big .meteorite__hp {
   font-size: 14px;
+}
+
+.meteorite--healer {
+  width: 34px;
+  height: 34px;
+  margin-left: -17px;
+  margin-top: -17px;
+  border-color: #44cc88;
+  background: radial-gradient(circle at 35% 35%, #88ffcc, #228855);
+  box-shadow: 0 0 18px rgb(80 255 160 / 75%);
+  z-index: 2;
+}
+
+.meteorite__heal-aura {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  border: 2px dashed rgb(100 255 180 / 55%);
+  background: radial-gradient(circle, rgb(80 255 160 / 18%) 0%, rgb(80 255 160 / 6%) 55%, transparent 72%);
+  box-shadow: 0 0 24px rgb(80 255 160 / 25%);
+  pointer-events: none;
+  z-index: -1;
+  animation: healer-aura-pulse 2s ease-in-out infinite;
+}
+
+@keyframes healer-aura-pulse {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+.meteorite--healer .meteorite__hp {
+  font-size: 13px;
+}
+
+.meteorite--shielder {
+  width: 36px;
+  height: 36px;
+  margin-left: -18px;
+  margin-top: -18px;
+  border-color: #6688ff;
+  background: radial-gradient(circle at 35% 35%, #99bbff, #334488);
+  box-shadow: 0 0 18px rgb(100 140 255 / 75%);
+  z-index: 2;
+}
+
+.meteorite__shield-aura {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  border: 2px dashed rgb(120 160 255 / 60%);
+  background: radial-gradient(circle, rgb(100 140 255 / 16%) 0%, rgb(100 140 255 / 5%) 55%, transparent 72%);
+  box-shadow: 0 0 24px rgb(100 140 255 / 22%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.meteorite--shielder .meteorite__hp {
+  font-size: 13px;
+}
+
+.meteorite__shielder-mark {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  font-size: 12px;
+  line-height: 1;
+  filter: drop-shadow(0 0 4px rgb(120 160 255 / 90%));
+}
+
+.meteorite__healer-mark {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #44ff99;
+  color: #0a3020;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 8px rgb(80 255 160 / 90%);
 }
 
 .meteorite__hp {
